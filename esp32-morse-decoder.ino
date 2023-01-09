@@ -10,6 +10,8 @@
 // INCLUDES
 // See https://github.com/LennartHennigs/Button2
 #include "src/Button2.h"
+// See https://github.com/mathertel/LiquidCrystal_PCF8574
+#include "src/LiquidCrystal_PCF8574.h"
 // Uncomment when doing classification
 #ifndef IS_TRAINING
   #include "model.h"
@@ -26,7 +28,7 @@ const byte ledPin = 2;
 const byte patternLength = 4;
 // The maximum allowed space between "dots" and "dashes" within the same character
 // If the time elapsed since last input was received exceeds this value, we'll move onto the next character 
-const int intraCharacterPause = 800;
+const int intraCharacterPause = 500;
 
 // GLOBALS
 // A button object 
@@ -35,13 +37,16 @@ Button2 button;
 float pattern[patternLength];
 // The time at which the last input was received
 unsigned long lastReleaseTime;
-// Counter of how many elements have been received in the current pattern
+// Counter of how many elements (dots/dashes) have been received in the current pattern
 uint8_t counter;
+// How many characters (a/b/c/...) have been received/decoded
+uint8_t charsReceived;
 // If we're not training...
 #ifndef IS_TRAINING
   // Grab a reference to the model's classifier function exported from SciKit-Learn
   Eloquent::ML::Port::RandomForest classifier;
 #endif
+LiquidCrystal_PCF8574 lcd(0x27);  //LCD address is 0x27 for PCF8574 and 0x3F for PCF8574A
 
 void setup() {
   // Initialise serial monitor connection
@@ -54,6 +59,14 @@ void setup() {
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW);
 
+  // See http://playground.arduino.cc/Main/I2cScanner how to test for a I2C device.
+  Wire.begin();
+  lcd.begin(16, 2);
+  lcd.setBacklight(200);
+  lcd.print("Morse Decoder");
+  delay(1000);
+  lcd.clear();
+
   // Configure the button input
   // Anything less than 30ms we won't register as an input at all  
   button.setDebounceTime(30);
@@ -64,6 +77,14 @@ void setup() {
 
 // Called when a complete character pattern has been received
 void onCharacterReceive() {
+    charsReceived++;    
+    if(charsReceived % 16 == 0) {
+      lcd.setCursor(0, 1);
+    }
+    if(charsReceived % 32 == 0) {
+      lcd.clear();
+      lcd.setCursor(0, 0);
+    }
 
     // If we're gathering training data
     #ifdef IS_TRAINING
@@ -74,8 +95,12 @@ void onCharacterReceive() {
       }
     // If we're applying the classifier function
     #else
-      // Send the model's prediction to the serial monitor
+      // Return the classifier's prediction
+      char* result = (char*)classifier.predictLabel(pattern);
+      // Send to the serial monitor
       Serial.println(classifier.predictLabel(pattern));
+      // Send to the LCD display
+      lcd.print(result);
     #endif
 
     // Reset the counter and pattern array
